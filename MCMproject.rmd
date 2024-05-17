@@ -15,17 +15,37 @@ library(knitr)
 library(kableExtra)
 library(magrittr)
 library(openxlsx)
-library(pander)
-library(corrplot)
-library(caret)
-library(FactoMineR)
-library(factoextra)
-library(devtools)
+library(DescTools)
 library(rio)
-library(corrplot)
-library(psych)
+library(robustHD)
 library(ggpubr)
+library(ggplot2)
+library(lmtest)
+library(sjPlot)
+library(tseries)
+library(GGally)
+library(leaps)
+library(questionr)
+library(pander)
+library(skimr)
+library(readr)
+library(openxlsx)
+library(dplyr)
+library(outliers)
+library(EnvStats)
+library(AATtools)
+library(corrplot)
+library(Hmisc)
+library(ppcor)
+library(car)
 library(REdaS)
+library(magrittr)
+library(caret)
+library(factoextra)
+library(cluster)
+library(FactoMineR)
+library(devtools)
+library(biotools)
 ```
 
 ### Recap
@@ -288,3 +308,72 @@ legend(0.8, 5, c('Кластер 1', 'Кластер 2', 'Кластер 3', 'К
 text(x =  seq_along(names(df1_new)), y = par("usr")[3] - 1, srt = 15, adj = 0.5,
      labels = names(df1_new), xpd = TRUE, cex = 0.5)
 ```
+
+### Линейный дискриминантный анализ
+
+Добавим к основному дата-фрейму вектор принадлежности к кластерам
+```{r}
+cl <- kmeans4$cluster
+df1_new <- as.data.frame(cbind(df1_new, cl))
+```
+
+Составим обучающую и тестовую выборки: 
+```{r}
+smpl_size <- floor(2/3 * nrow(df1_new))
+
+set.seed(777)
+train_ind <- sample(seq_len(nrow(df1_new)), size = smpl_size)
+
+train.data <- as.data.frame(df1_new[train_ind,])
+test.data <- as.data.frame(df1_new[-train_ind,])
+```
+
+```{r}
+lda.fit <- lda(train.data[1:7], train.data$cl)
+lda.fit
+```
+
+Построим хуйню, че показывает - хз
+```{r}
+plot(lda.fit)
+```
+
+
+```{r}
+lda.pred <- predict(lda.fit, test.data[1:7])
+names(lda.pred)
+```
+
+```{r}
+lda.pred$class
+table(lda.pred$class, test.data[,c("cl")])
+summary(lda.pred$class)
+```
+
+
+\
+
+
+```{r}
+misclass <- function(pred, obs) { tbl <- table(pred, obs)
+sum <- colSums(tbl)
+dia <- diag(tbl)
+msc <- ((sum - dia)/sum) * 100
+m.m <- mean(msc)
+cat("Classification table:", "\n")
+print(tbl)
+cat("Misclassification errors:", "\n")
+print(round(msc, 2))
+
+print(round(m.m, 2))}
+
+misclass(lda.pred$class, test.data[,c("cl")])
+```
+Сами в ахуе, что так заебись получилось, но как порядочные исследователи проведём соответствующий тест:
+
+```{r}
+ldam <- manova(as.matrix(test.data[1:7]) ~ lda.pred$class)
+
+summary(ldam, test = "Wilks")
+```
+Ну что, значение лямбды меньше общепринятого доброго уровня 0.05 => делаем вывод, что средние по группам значимо отличабтся, следовательно у выделенных переменных доказано наличие дискриминирующиюх свойств. Ура победа, пустите меня в ML
