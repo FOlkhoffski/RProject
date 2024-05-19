@@ -311,56 +311,50 @@ text(x =  seq_along(names(df1_new)), y = par("usr")[3] - 1, srt = 15, adj = 0.5,
 
 ### Линейный дискриминантный анализ
 
-Добавим к основному дата-фрейму вектор принадлежности к кластерам
+Добавим к основному дата-фрейму вектор принадлежности к кластерам:
 ```{r}
 cl <- kmeans4$cluster
 df1_new <- as.data.frame(cbind(df1_new, cl))
+df1_train <- df1_new[-(1395:1399), ]
+df1_check <- df1_new[(1395:1399), ]
 ```
+Также мы выделили 4 наблюдения, на которых протестируем модель, после обучения.
 
 Составим обучающую и тестовую выборки: 
 ```{r}
-smpl_size <- floor(2/3 * nrow(df1_new))
+smpl_size <- floor(2/3 * nrow(df1_train))
 
-set.seed(777)
-train_ind <- sample(seq_len(nrow(df1_new)), size = smpl_size)
+set.seed(123)
+train_ind <- sample(seq_len(nrow(df1_train)), size = smpl_size)
 
-train.data <- as.data.frame(df1_new[train_ind,])
-test.data <- as.data.frame(df1_new[-train_ind,])
+train.data <- as.data.frame(df1_train[train_ind,])
+test.data <- as.data.frame(df1_train[-train_ind,])
+train.data <- subset(train.data, select = -cl)
+test.data <- subset(test.data, select = -cl)
 ```
 
+\
+
+Теперь построим саму дискриминантную функцию:
 ```{r}
 lda.fit <- lda(train.data[1:7], train.data$cl)
 lda.fit
 ```
+Получаем информацию о коэффициентах дискриминирующих переменных, вклад в дискриминацию, групповые средние в срезе по каждой переменной. 
 
-Построим хуйню, че показывает - хз
-```{r}
-plot(lda.fit)
-```
-
-
-```{r}
-lda.pred <- predict(lda.fit, test.data[1:7])
-names(lda.pred)
-```
-
-```{r}
-lda.pred$class
-table(lda.pred$class, test.data[,c("cl")])
-summary(lda.pred$class)
-```
 
 
 \
 
-
+Теперь испытаем полученную нами функцию на тестовой выборке и построим по результатам классификационную матрицу
 ```{r}
+lda.pred <- predict(lda.fit, test.data[1:7])
 misclass <- function(pred, obs) { tbl <- table(pred, obs)
 sum <- colSums(tbl)
 dia <- diag(tbl)
 msc <- ((sum - dia)/sum) * 100
 m.m <- mean(msc)
-cat("Classification table:", "\n")
+cat("Classification matrix:", "\n")
 print(tbl)
 cat("Misclassification errors:", "\n")
 print(round(msc, 2))
@@ -369,11 +363,47 @@ print(round(m.m, 2))}
 
 misclass(lda.pred$class, test.data[,c("cl")])
 ```
-Сами в ахуе, что так заебись получилось, но как порядочные исследователи проведём соответствующий тест:
+\
+
+Что можем видеть: в целом функция довольно точно относит переменную к классу, который установил k-means, допуская при этом ошибку примерно в 7% случаев. Кластеры разбиты между собой досаточно хорошо, кроме третьего: судя по ошибкам, он довольно близок к первому и второму кластеру, из-за чего иногда у функции возникают ошибки - чаще, чем в других кластерах. Посмотрим, куда теперь функция отнесёт заранее изъятые из рассматриваемого дата-сета наблюдения:
+```{r}
+lda.check <- predict(lda.fit, df1_check[1:7])
+misclass(lda.check$class, df1_check[,c("cl")])
+```
+\
+Видим из матрицы, что по заранее изъятым из выборки данным (5 наблюдений), дискриминантная функция не допустила ни одной ошибки неверной классификации. Все наблюдения классифицированы в соответствии с результатом k-means. 
+
 
 ```{r}
 ldam <- manova(as.matrix(test.data[1:7]) ~ lda.pred$class)
 
 summary(ldam, test = "Wilks")
 ```
-Ну что, значение лямбды меньше общепринятого доброго уровня 0.05 => делаем вывод, что средние по группам значимо отличабтся, следовательно у выделенных переменных доказано наличие дискриминирующиюх свойств. Ура победа, пустите меня в ML
+Получаем, что значение лямбды меньше общепринятого уровня 0.05 => делаем вывод, что средние по группам значимо отличаются, следовательно у выделенных переменных доказано наличие дискриминирующиюх свойств.
+
+
+\
+
+Для построения графика нам необходимо преобразовать наши данные, так как R не может построить график из данных формата `lda` 
+```{r}
+test.data$class <- lda.pred$class
+trainprediction <- predict(lda.fit, train.data[1:7])
+train.data$class <- trainprediction$class
+
+train.data$type <- "Train"
+test.data$type <- "Test"
+plot_data <- rbind(train.data, test.data)
+```
+
+
+Построим графики:
+```{r}
+ggplot(plot_data, aes(x = plot_data$cl, y = plot_data$class, color = plot_data$type, shape = type)) +
+  geom_point(size = 3) +
+  labs(title = "LDA Classification of Training and Test Data",
+       x = "Predicted",
+       y = "Actual",
+       color = "Predicted Class",
+       shape = "Dataset") +
+  theme_minimal()
+```
